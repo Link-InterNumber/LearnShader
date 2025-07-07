@@ -1,6 +1,6 @@
 // Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
 
-Shader "Custom/Chapter7/Chapter7_NormalMapTangentSpaceMat"
+Shader "Custom/Chapter7/Chapter7_NormalMapWorldSpaceMat"
 {
     Properties
     {
@@ -45,8 +45,11 @@ Shader "Custom/Chapter7/Chapter7_NormalMapTangentSpaceMat"
             {
                 float4 pos : SV_POSITION;
                 float4 uv : TEXCOORD0;
-                float3 lightDir : TEXCOORD1;
-                float3 viewDir : TEXCOORD2;
+                float4 TtoW0 : TEXCOORD1; // Tangent to World space rotatio
+                float4 TtoW1 : TEXCOORD2; // Tangent to World space
+                float4 TtoW2 : TEXCOORD3; // Tangent to World space
+                // float3 lightDir : TEXCOORD1;
+                // float3 viewDir : TEXCOORD2;
                 // float3 worldNormal : TEXCOORD0;
                 // fixed3 worldPos : TEXCOORD1;
             };
@@ -71,28 +74,37 @@ Shader "Custom/Chapter7/Chapter7_NormalMapTangentSpaceMat"
                 o.uv.xy = v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw; // Adjust UVs based on texture scale and offset
                 o.uv.zw = v.texcoord.xy * _BumpMap_ST.xy + _BumpMap_ST.zw; // Adjust UVs for normal map
                 // o.uv = TRANSFORM_TEX(v.texcoord, _MainTex); // Use Unity's macro to handle texture transformations
-                TANGENT_SPACE_ROTATION;
-                o.lightDir = mul(rotation, ObjSpaceLightDir(v.vertex)).xyz;
-                o.viewDir = mul(rotation, ObjSpaceViewDir(v.vertex)).xyz;
+
+                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+
+                float3 worldNormal = UnityObjectToWorldNormal(v.normal);
+                float3 worldTangent = UnityObjectToWorldDir(v.tangent.xyz);
+                float3 worldBinormal = cross(worldNormal, worldTangent) * v.tangent.w;
+
+                o.TtoW0 = float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x);
+                o.TtoW1 = float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y);
+                o.TtoW2 = float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z);
+
                 return o;
             }
 
             fixed4 frag (v2f i) : SV_Target
             {
-                fixed3 tangentLightDir = normalize(i.lightDir);
-                fixed3 tangentViewDir = normalize(i.viewDir);
+                float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
+                float3 lightDir = normalize(UnityWorldSpaceLightDir(worldPos));
+                float3 viewDir = normalize(UnityWorldSpaceViewDir(worldPos));
 
-                fixed4 packedNormal = tex2D(_BumpMap, i.uv.zw);
-                fixed3 tangentNormal = UnpackNormal(packedNormal);
-                tangentNormal.xy *= _BumpScale; // Scale the normal map
-                tangentNormal.z = sqrt(1.0 - saturate(dot(tangentNormal.xy, tangentNormal.xy))); // Ensure the normal is normalized
+                float3 bump = UnpackNormal(tex2D(_BumpMap, i.uv.zw));
+                bump.xy *= _BumpScale; // Scale the normal map
+                bump.z = sqrt(1.0 - saturate(dot(bump.xy, bump.xy))); // Ensure the normal is normalized
+                bump = normalize(half3(dot(i.TtoW0.xyz, bump), dot(i.TtoW1.xyz, bump), dot(i.TtoW2.xyz, bump)));
 
                 fixed3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
                 fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
-                fixed3 diffuse = _LightColor0.rgb * albedo * _Diffuse.rgb * max(0, dot(tangentNormal, tangentLightDir));
+                fixed3 diffuse = _LightColor0.rgb * albedo * _Diffuse.rgb * max(0, dot(bump, lightDir));
 
-                fixed3 halfDir = normalize(tangentLightDir + tangentViewDir);
-                fixed3 specular = _LightColor0.rgb * _Specular.rgb * pow(max(0, dot(tangentNormal, halfDir)), _Gloss);
+                fixed3 halfDir = normalize(lightDir + viewDir);
+                fixed3 specular = _LightColor0.rgb * _Specular.rgb * pow(max(0, dot(bump, halfDir)), _Gloss);
 
                 return fixed4(ambient + diffuse + specular, 1.0);
             }
