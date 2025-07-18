@@ -1,37 +1,32 @@
-Shader "Custom/Chapter6/Chapter7-Texture"
+Shader "Custom/Chapter7/Chapter7_RampTexture"
 {
     Properties
     {
-        _Color ("Color", Color) = (1,1,1,1)
-        _MainTex ("Main Tex", 2D) = "white" {}
-        _Diffuse ("Diffuse", Color) = (1,1,1,1)
-        _Specular ("Specular", Color) = (1,1,1,1)
-        _Gloss ("Gloss", Range(8.0,256)) = 20
+        _Color ("Color", Color) = (1, 1, 1, 1)
+        _RampTex ("Ramp Tex", 2D) = "white" {}
+        _Specular ("Specular", Color) = (1, 1, 1, 1)
+        _Gloss ("Gloss", Range(8.0, 256)) = 20
     }
     SubShader
     {
-        LOD 300
-        
         Pass
         {
-            Name "ForwardLit"
-            Tags
-            {
-                "LightMode" = "UniversalForward"
-            }
+            Tags { "LightMode" = "UniversalForward" }
+            LOD 200
 
             CGPROGRAM
-
+            // Physically based Standard lighting model, and enable shadows on all light types
             #pragma vertex vert
+
+            // Use shader model 3.0 target, to get nicer looking lighting
             #pragma fragment frag
 
             #include "Lighting.cginc"
             #include "UnityCG.cginc"
 
             fixed4 _Color;
-            sampler2D _MainTex;
-            float4 _MainTex_ST;
-            fixed4 _Diffuse;
+            sampler2D _RampTex;
+            float4 _RampTex_ST;
             fixed4 _Specular;
             float _Gloss;
 
@@ -56,28 +51,33 @@ Shader "Custom/Chapter6/Chapter7-Texture"
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.worldNormal = UnityObjectToWorldNormal(v.normal);
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex);
-                o.uv = v.texcoord * _MainTex_ST.xy + _MainTex_ST.zw; // Adjust UVs based on texture scale and offset
-                o.uv = TRANSFORM_TEX(v.texcoord, _MainTex); // Use Unity's macro to handle texture transformations
+                o.uv = TRANSFORM_TEX(v.texcoord, _RampTex); // Use Unity's macro to handle texture transformations
                 return o;
             }
 
             fixed4 frag(v2f i) : SV_Target
             {
+                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz;
                 fixed3 worldNormal = normalize(i.worldNormal);
                 fixed3 worldLightDir = normalize(UnityWorldSpaceLightDir(i.worldPos));
-                
-                fixed3 albedo = tex2D(_MainTex, i.uv).rgb * _Color.rgb; // Sample the texture and apply color
-                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
 
-                fixed3 diffuse = _LightColor0.rgb * albedo * _Diffuse.rgb * saturate(dot(worldNormal, worldLightDir));
-                fixed3 reflectDir = normalize(reflect(-worldLightDir, worldNormal));
+                // Sample the ramp texture
+                fixed4 rampColor = tex2D(_RampTex, i.uv);
+
+                fixed halfLambert = 0.5 * dot(worldNormal, worldLightDir) + 0.5;
+                fixed3 diffuseColor = tex2D(_RampTex, fixed2(halfLambert, halfLambert)).rgb * _Color.rgb;
+
+                fixed3 diffuse = _LightColor0.rgb * diffuseColor; // * saturate(dot(worldNormal, worldLightDir));
+
                 fixed3 viewDir = normalize(UnityWorldSpaceViewDir(i.worldPos));
                 fixed3 halfDir = normalize(worldLightDir + viewDir);
-                fixed3 specular = _LightColor0.rgb * _Specular.rgb * pow(max(0, dot(reflectDir, halfDir)), _Gloss);
-                return fixed4( ambient + diffuse + specular, 1.0);
+                fixed3 specular = _LightColor0.rgb * _Specular.rgb * pow(max(0, dot(worldNormal, halfDir)), _Gloss);
+                return fixed4(ambient + diffuse + specular, 1.0);
             }
+
             ENDCG
         }
+
     }
     FallBack "Specular"
 }
