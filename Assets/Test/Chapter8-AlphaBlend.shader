@@ -67,7 +67,7 @@ Shader "Custom/Chapter8/Chapter8-AlphaBlend"
             fixed4 texColor = tex2D(_MainTex, i.uv);
 
             fixed3 albedo = texColor.rgb * _Color.rgb;
-            fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
+            fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
             fixed3 diffuse = _LightColor0.rgb * albedo * saturate(dot(worldNormal, worldLightDir));
             return fixed4(ambient + diffuse, texColor.a * _AlphaSacle);
          }

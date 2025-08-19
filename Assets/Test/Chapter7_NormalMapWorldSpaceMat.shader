@@ -100,7 +100,7 @@ Shader "Custom/Chapter7/Chapter7_NormalMapWorldSpaceMat"
                 bump = normalize(half3(dot(i.TtoW0.xyz, bump), dot(i.TtoW1.xyz, bump), dot(i.TtoW2.xyz, bump)));
 
                 fixed3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
-                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
+                fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
                 fixed3 diffuse = _LightColor0.rgb * albedo * _Diffuse.rgb * max(0, dot(bump, lightDir));
 
                 fixed3 halfDir = normalize(lightDir + viewDir);

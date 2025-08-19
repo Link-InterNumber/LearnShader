@@ -67,7 +67,7 @@ Shader "Custom/Chapter8/Chapter8-AlphaTest"
             clip (texColor.a - _Cutoff); // Alpha test based on the cutoff value
 
             fixed3 albedo = texColor.rgb * _Color.rgb; // Sample the texture and apply color
-            fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
+            fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
 
             fixed3 diffuse = _LightColor0.rgb * albedo * saturate(dot(worldNormal, worldLightDir));
             // fixed3 reflectDir = normalize(reflect(- worldLightDir, worldNormal));

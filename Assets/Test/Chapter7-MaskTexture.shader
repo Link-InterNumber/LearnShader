@@ -74,7 +74,7 @@ Shader "Custom/Chapter7/Chapter7-MaskTexture"
 
                 fixed3 albedo = tex2D(_MainTex, i.uv).rgb * _Color.rgb;
 
-                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
+                fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
 
                 fixed3 diffuse = _LightColor0.rgb * albedo * max(0, dot(tangentNormal, tangentLightDir));
 

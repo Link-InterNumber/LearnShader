@@ -57,7 +57,7 @@ Shader "Custom/Chapter7/Chapter7_RampTexture"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz;
+                fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz;
                 fixed3 worldNormal = normalize(i.worldNormal);
                 fixed3 worldLightDir = normalize(UnityWorldSpaceLightDir(i.worldPos));
 

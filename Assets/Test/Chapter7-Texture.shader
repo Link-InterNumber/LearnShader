@@ -67,7 +67,7 @@ Shader "Custom/Chapter6/Chapter7-Texture"
                 fixed3 worldLightDir = normalize(UnityWorldSpaceLightDir(i.worldPos));
                 
                 fixed3 albedo = tex2D(_MainTex, i.uv).rgb * _Color.rgb; // Sample the texture and apply color
-                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
+                fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
 
                 fixed3 diffuse = _LightColor0.rgb * albedo * _Diffuse.rgb * saturate(dot(worldNormal, worldLightDir));
                 fixed3 reflectDir = normalize(reflect(-worldLightDir, worldNormal));

@@ -88,7 +88,7 @@ Shader "Custom/Chapter7/Chapter7_NormalMapTangentSpaceMat"
                 tangentNormal.z = sqrt(1.0 - saturate(dot(tangentNormal.xy, tangentNormal.xy))); // Ensure the normal is normalized
 
                 fixed3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
-                fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz * albedo;
+                fixed3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
                 fixed3 diffuse = _LightColor0.rgb * albedo * _Diffuse.rgb * max(0, dot(tangentNormal, tangentLightDir));
 
                 fixed3 halfDir = normalize(tangentLightDir + tangentViewDir);
