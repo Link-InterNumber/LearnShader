@@ -3,7 +3,7 @@ Shader "Custom/SpriteOutline"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
-        _Color ("Tint", Color) = (1,1,1,1)
+        _Color ("Color", Color) = (1,1,1,1)
         _OutlineColor ("Outline Color", Color) = (0,0,0,1)
         _OutlineWidth ("Outline Width (px)", Range(0,32)) = 2
         _OutlineSoftness ("Softness (px)", Range(0.1,16)) = 2.0
@@ -24,6 +24,8 @@ Shader "Custom/SpriteOutline"
             #pragma fragment frag
             #pragma target 3.0
 
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
             sampler2D _MainTex;
             float4 _MainTex_ST;
             float4 _MainTex_TexelSize; // x = 1/width, y = 1/height
@@ -36,19 +38,26 @@ Shader "Custom/SpriteOutline"
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
+                float4 color : COLOR;
             };
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
                 float2 uv  : TEXCOORD0;
+                float4 vcolor : COLOR;
             };
 
             v2f vert(app v)
             {
                 v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
+                VertexPositionInputs vertexInput = GetVertexPositionInputs(v.vertex.xyz);
+                
+                o.pos = vertexInput.positionCS;
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+                o.vcolor = v.color; 
                 return o;
             }
 
@@ -66,8 +75,10 @@ Shader "Custom/SpriteOutline"
 
             float4 frag(v2f i) : SV_Target
             {
+                float4 color = _Color * i.vcolor;
+
                 // base sample
-                float4 baseSample = tex2D(_MainTex, i.uv) * _Color;
+                float4 baseSample = tex2D(_MainTex, i.uv) * color;
                 float baseAlpha = baseSample.a;
 
                 // convert outline width and softness from px to UV
