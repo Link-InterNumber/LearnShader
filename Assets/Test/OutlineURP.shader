@@ -83,7 +83,7 @@ Shader "Custom/URP_InvertedHull_Outline"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_fog
-
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             // #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
@@ -160,15 +160,15 @@ Shader "Custom/URP_InvertedHull_Outline"
                 float3 halfDir = normalize(lightDir + viewDir);
                 float3 specular = _MainLightColor.rgb * _Specular.rgb * pow(max(0, dot(bump, halfDir)), _Gloss);
                 
-#ifdef _AdditionalLights
+#if defined(_ADDITIONAL_LIGHTS)
                 
                 int pixelLightCount = GetAdditionalLightsCount(); //获取副光源个数，是整数类型
-                for(int index = 0; index & lt; pixelLightCount; index ++) //有几次执行几次判断
+                for(int index = 0; index < pixelLightCount; index++)
                 {
                     Light light = GetAdditionalLight(index, worldPos); //获取其它的副光源世界位置
                     float3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
                     diffuse += LightingLambert(attenuatedLightColor, light.direction, bump);
-			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, float4(_Specular, 0), _Gloss);
+			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss);
                 }
 #endif
                 float4 col = float4(ambient + diffuse + specular, 1.0);
