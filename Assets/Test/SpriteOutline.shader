@@ -1,0 +1,113 @@
+Shader "Custom/SpriteOutline"
+{
+    Properties
+    {
+        _MainTex ("Texture", 2D) = "white" {}
+        _Color ("Tint", Color) = (1,1,1,1)
+        _OutlineColor ("Outline Color", Color) = (0,0,0,1)
+        _OutlineWidth ("Outline Width (px)", Range(0,32)) = 2
+        _OutlineSoftness ("Softness (px)", Range(0.1,16)) = 2.0
+    }
+
+    SubShader
+    {
+        Tags { "RenderPipeline"="UniversalPipeline" "Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent" }
+        Cull Off
+        ZWrite Off
+        Blend SrcAlpha OneMinusSrcAlpha
+
+        Pass
+        {
+            Name "GPU_2D_Outline"
+            HLSLPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 3.0
+
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
+            float4 _MainTex_TexelSize; // x = 1/width, y = 1/height
+            float4 _Color;
+            float4 _OutlineColor;
+            float _OutlineWidth;    // in pixels
+            float _OutlineSoftness; // in pixels
+
+            struct app
+            {
+                float4 vertex : POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct v2f
+            {
+                float4 pos : SV_POSITION;
+                float2 uv  : TEXCOORD0;
+            };
+
+            v2f vert(app v)
+            {
+                v2f o;
+                o.pos = UnityObjectToClipPos(v.vertex);
+                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+                return o;
+            }
+
+            // 8-neighbor offsets (N, S, E, W, NE, NW, SE, SW)
+            static const float2 OFFS[8] = {
+                float2( 1,  0),
+                float2(-1,  0),
+                float2( 0,  1),
+                float2( 0, -1),
+                float2( 1,  1),
+                float2(-1,  1),
+                float2( 1, -1),
+                float2(-1, -1)
+            };
+
+            float4 frag(v2f i) : SV_Target
+            {
+                // base sample
+                float4 baseSample = tex2D(_MainTex, i.uv) * _Color;
+                float baseAlpha = baseSample.a;
+
+                // convert outline width and softness from px to UV
+                float2 radiusUV = _OutlineWidth * _MainTex_TexelSize.xy;
+                float softnessUV = max(_OutlineSoftness * (_MainTex_TexelSize.x + _MainTex_TexelSize.y) * 0.5, 1e-6);
+
+                // sample neighbors to compute max alpha (dilate)
+                float maxNeighbor = 0.0;
+                // unrolled loop for performance (GPU-friendly, no branches)
+                // multiply OFFS by radiusUV per component
+                float2 off;
+
+                off = OFFS[0] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[1] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[2] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[3] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[4] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[5] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[6] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+                off = OFFS[7] * radiusUV; maxNeighbor = max(maxNeighbor, tex2D(_MainTex, i.uv + off).a);
+
+                // compute outline strength from difference (no branching)
+                // larger maxNeighbor - baseAlpha => stronger outline
+                float raw = saturate((maxNeighbor - baseAlpha) / max(_OutlineSoftness * 0.01, 1e-6)); // normalized by softness
+                // softstep for smoother gradation (still no branching)
+                float outlineMask = smoothstep(0.0, 1.0, raw);
+
+                // compose result: draw base where baseAlpha>0, otherwise outline where outlineMask>0.
+                // compute final alpha and color in a stable (no-branch) way
+                float outAlpha = saturate(baseAlpha + outlineMask * (1.0 - baseAlpha));
+                // blend colors so base dominates where opaque, outline fills transparent areas
+                float3 outRGB = (baseSample.rgb * baseAlpha + _OutlineColor.rgb * outlineMask * (1.0 - baseAlpha));
+                // normalize to non-premultiplied color
+                outRGB = outRGB / max(outAlpha, 1e-6);
+
+                return float4(outRGB, outAlpha);
+            }
+            ENDHLSL
+        }
+    }
+
+    FallBack "Unlit/Transparent"
+}
