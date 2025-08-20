@@ -120,15 +120,15 @@ Shader "Custom/URP_InvertedHull_Outline"
             v2f vert(a2v v)
             {
                 v2f o;
-                UNITY_SETUP_INSTANCE_ID(input);
-                UNITY_TRANSFER_INSTANCE_ID(input, output);
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(v.vertex.xyz);
 
                 o.pos = vertexInput.positionCS; // UnityObjectToClipPos(v.vertex); // Transform vertex position to clip space
                 o.uv.xy = v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw; // Adjust UVs based on texture scale and offset
                 o.uv.zw = v.texcoord.xy * _BumpMap_ST.xy + _BumpMap_ST.zw; // Adjust UVs for normal map
 
-                float3 worldPos = vertexInput.positionWS; // mul(unity_ObjectToWorld, v.vertex).xyz;
+                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz; // mul(unity_ObjectToWorld, v.vertex).xyz;
 
                 float3 worldNormal = normalize(mul(unity_ObjectToWorld, v.normal));
                 float3 worldTangent = normalize(mul(unity_ObjectToWorld, v.tangent.xyz));
@@ -146,7 +146,7 @@ Shader "Custom/URP_InvertedHull_Outline"
             {
                 float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
                 float3 lightDir = normalize(GetMainLight().direction);
-                float3 viewDir = _WorldSpaceCameraPos - worldPos;
+                float3 viewDir = normalize(_WorldSpaceCameraPos - worldPos);
 
                 float3 bump = UnpackNormal(tex2D(_BumpMap, i.uv.zw));
                 bump.xy *= _BumpScale; // Scale the normal map
