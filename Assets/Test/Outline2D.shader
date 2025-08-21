@@ -1,4 +1,4 @@
-Shader "Custom/SpriteOutline"
+Shader "Custom/Outline2D"
 {
     Properties
     {
@@ -75,11 +75,23 @@ Shader "Custom/SpriteOutline"
 
             float4 frag(v2f i) : SV_Target
             {
-                float4 color = _Color * i.vcolor;
+                float4 matColor = _Color * i.vcolor;
 
-                // base sample
-                float4 baseSample = tex2D(_MainTex, i.uv) * color;
-                float baseAlpha = baseSample.a;
+                // sample texture once
+                float4 tex = tex2D(_MainTex, i.uv);
+
+                // mask / alpha used for both sprites and text
+                float mask = tex.a;
+
+                // determine if texture RGB carries color (for sprites) or is empty (for font atlases)
+                float texPresence = max(max(tex.r, tex.g), tex.b);
+                float useTex = step(0.001, texPresence); // 0 or 1, branchless
+
+                // base color:
+                // - if texture has real RGB: use tex.rgb * material color
+                // - otherwise (font atlas): use material color modulated by mask
+                float3 baseRGB = lerp(matColor.rgb * mask, (tex.rgb * matColor.rgb), useTex);
+                float baseAlpha = mask * matColor.a;
 
                 // convert outline width and softness from px to UV
                 float2 radiusUV = _OutlineWidth * _MainTex_TexelSize.xy;
@@ -110,7 +122,7 @@ Shader "Custom/SpriteOutline"
                 // compute final alpha and color in a stable (no-branch) way
                 float outAlpha = saturate(baseAlpha + outlineMask * (1.0 - baseAlpha));
                 // blend colors so base dominates where opaque, outline fills transparent areas
-                float3 outRGB = (baseSample.rgb * baseAlpha + _OutlineColor.rgb * outlineMask * (1.0 - baseAlpha));
+                float3 outRGB = (baseRGB.rgb * baseAlpha + _OutlineColor.rgb * outlineMask * (1.0 - baseAlpha));
                 // normalize to non-premultiplied color
                 outRGB = outRGB / max(outAlpha, 1e-6);
 
