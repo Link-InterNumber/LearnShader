@@ -125,7 +125,7 @@ Shader "Custom/BaseUrpLit"
                 // 纹理采样
                 float3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
                 
-                //住光源阴影
+                // 主光源阴影
                 i.shadowCoord = TransformWorldToShadowCoord(worldPos);
                 float shadow = MainLightRealtimeShadow(i.shadowCoord);
 
