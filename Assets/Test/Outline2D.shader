@@ -30,10 +30,13 @@ Shader "Custom/Outline2D"
             sampler2D _MainTex;
             float4 _MainTex_ST;
             float4 _MainTex_TexelSize; // x = 1/width, y = 1/height
+
+            CBUFFER_START(UnityPerMaterial)
             float4 _Color;
             float4 _OutlineColor;
             float _OutlineWidth;    // in pixels
             float _OutlineSoftness; // in pixels
+            CBUFFER_END
 
             struct app
             {

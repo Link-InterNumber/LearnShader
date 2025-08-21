@@ -72,12 +72,13 @@ Shader "Custom/GrayUrpLit"
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
-
-            float4 _Color;
             sampler2D _MainTex;
             float4 _MainTex_ST;
             sampler2D _BumpMap;
             float4 _BumpMap_ST;
+
+            CBUFFER_START(UnityPerMaterial)
+            float4 _Color;
             float _BumpScale;
             float4 _Diffuse;
             float4 _Specular;
@@ -86,6 +87,7 @@ Shader "Custom/GrayUrpLit"
 
             float _Gray;
             float4 _GrayMask;
+            CBUFFER_END
 
             v2f vert(a2v v)
             {

@@ -26,9 +26,11 @@ Shader "Custom/BaseUnlit2D"
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
-            float4 _MainTex_TexelSize; // x = 1/width, y = 1/height
+            
+            CBUFFER_START(UnityPerMaterial)
             float4 _Color;
-
+            CBUFFER_END
+            
             struct app
             {
                 float4 vertex : POSITION;

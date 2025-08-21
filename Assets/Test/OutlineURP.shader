@@ -72,17 +72,19 @@ Shader "Custom/URP_InvertedHull_Outline"
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
-
-            float4 _Color;
             sampler2D _MainTex;
             float4 _MainTex_ST;
             sampler2D _BumpMap;
             float4 _BumpMap_ST;
+
+            CBUFFER_START(UnityPerMaterial)
+            float4 _Color;
             float _BumpScale;
             float4 _Diffuse;
             float4 _Specular;
             float _Gloss;
             float _Fresnel;
+            CBUFFER_END
 
             v2f vert(a2v v)
             {
@@ -182,8 +184,10 @@ Shader "Custom/URP_InvertedHull_Outline"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 
+            CBUFFER_START(UnityPerMaterial)
             float _OutlineWidth;
             float4 _OutlineColor;
+            CBUFFER_END
 
             struct appdataOutline
             {

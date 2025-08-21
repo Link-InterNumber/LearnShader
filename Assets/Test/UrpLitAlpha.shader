@@ -33,8 +33,11 @@ Shader "Custom/UrpLitAlpha"
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
+
+            CBUFFER_START(UnityPerMaterial)
             float4 _Color;
             float _ShadowAlphaCutoff; // add property if needed
+            CBUFFER_END
 
             struct a2v
             {
