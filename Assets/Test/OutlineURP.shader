@@ -32,10 +32,22 @@ Shader "Custom/URP_InvertedHull_Outline"
             // Physically based Standard lighting model, and enable shadows on all light types
             #pragma vertex vert
             #pragma fragment frag
+            // 阴影
+            #pragma multi_compile _ _SHADOWS_SOFT
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
+			#pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
+            // 雾
             #pragma multi_compile_fog
+            // 额外光源
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+            // #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS _ADDITIONAL_LIGHT_CALCULATE_SHADOWS
+            // GPU Instance
+            #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
             // #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
             struct a2v
@@ -44,6 +56,7 @@ Shader "Custom/URP_InvertedHull_Outline"
                 float3 normal : NORMAL;
                 float4 tangent : TANGENT;
                 float2 texcoord : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -53,7 +66,9 @@ Shader "Custom/URP_InvertedHull_Outline"
                 float4 TtoW0 : TEXCOORD1; // Tangent to World space rotatio
                 float4 TtoW1 : TEXCOORD2; // Tangent to World space
                 float4 TtoW2 : TEXCOORD3; // Tangent to World space
-                half fogFactor: TEXCOORD4;
+                half fogFactor : TEXCOORD4;
+                float4 shadowCoord : TEXCOORD5;	// shadow receive 
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
 
@@ -99,31 +114,43 @@ Shader "Custom/URP_InvertedHull_Outline"
                 float3 lightDir = normalize(GetMainLight().direction);
                 float3 viewDir = normalize(_WorldSpaceCameraPos - worldPos);
 
+                // 法线
                 float3 bump = UnpackNormal(tex2D(_BumpMap, i.uv.zw));
                 bump.xy *= _BumpScale; // Scale the normal map
                 bump.z = sqrt(1.0 - saturate(dot(bump.xy, bump.xy))); // Ensure the normal is normalized
                 bump = normalize(half3(dot(i.TtoW0.xyz, bump), dot(i.TtoW1.xyz, bump), dot(i.TtoW2.xyz, bump)));
 
+                // 纹理采样
                 float3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
+                
+                //住光源阴影
+                i.shadowCoord = TransformWorldToShadowCoord(worldPos);
+                float shadow = MainLightRealtimeShadow(i.shadowCoord);
+                
+                // 光照
                 float3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
-                float3 diffuse = _MainLightColor.rgb * albedo * _Diffuse.rgb * max(0, dot(bump, lightDir));
-
+                float3 diffuse = _MainLightColor.rgb * albedo * _Diffuse.rgb * max(0, dot(bump, lightDir)) * shadow;
+                // 反射方向
                 float3 halfDir = normalize(lightDir + viewDir);
-                float3 specular = _MainLightColor.rgb * _Specular.rgb * pow(max(0, dot(bump, halfDir)), _Gloss);
-                
+                float3 specular = _MainLightColor.rgb * _Specular.rgb * pow(max(0, dot(bump, halfDir)), _Gloss) * shadow;
+
 #if defined(_ADDITIONAL_LIGHTS)
-                
-                int pixelLightCount = GetAdditionalLightsCount(); //获取副光源个数，是整数类型
+                // 获取额外光源处理
+                int pixelLightCount = GetAdditionalLightsCount();
                 for(int index = 0; index < pixelLightCount; index++)
                 {
-                    Light light = GetAdditionalLight(index, worldPos); //获取其它的副光源世界位置
+                    Light light = GetAdditionalLight(index, worldPos);
+                    // 计算光照颜色和衰减
                     float3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
-                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump);
-			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss);
+                    // 获取额外光源的阴影
+                    float addtionalShadow = AdditionalLightRealtimeShadow(index, worldPos);
+                    // 计算漫反射和镜面反射
+                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump) * addtionalShadow;
+			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss) * addtionalShadow;
                 }
 #endif
                 float4 col = float4(ambient + diffuse + specular, 1.0);
-                
+                // 雾
                 col.rgb = MixFog(col.rgb, i.fogFactor);
                 return col;
             }
@@ -144,7 +171,11 @@ Shader "Custom/URP_InvertedHull_Outline"
             #pragma vertex VertOutline
             #pragma fragment FragOutline
             #pragma multi_compile_fog
+
+            // gpu instance
+            #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 
             float _OutlineWidth;
             float4 _OutlineColor;
@@ -153,18 +184,23 @@ Shader "Custom/URP_InvertedHull_Outline"
             {
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
+                float4 vcolor : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
                 half fogFactor: TEXCOORD1;
+                float4 vcolor : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             v2f VertOutline(appdataOutline v)
             {
                 v2f o;
-
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
                 // 不随摄像机远近变化的描边宽度（屏幕空间像素）
                 // float3 posOffset = v.vertex.xyz + v.normal * _OutlineWidth;
                 // o.pos = TransformObjectToHClip(float4(posOffset, 1.0));
@@ -191,12 +227,14 @@ Shader "Custom/URP_InvertedHull_Outline"
 
                 o.pos = clipPos;
                 o.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
+                o.vcolor = v.vcolor;
                 return o;
             }
 
             float4 FragOutline(v2f i) : SV_Target
             {
-                float3 col = MixFog(_OutlineColor, i.fogFactor);
+                UNITY_SETUP_INSTANCE_ID(i);
+                float3 col = MixFog(_OutlineColor, i.fogFactor) * i.vcolor.rgb;
                 return float4(col, 1.0);
             }
             ENDHLSL
