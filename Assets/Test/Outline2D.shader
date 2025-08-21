@@ -22,6 +22,7 @@ Shader "Custom/Outline2D"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
             #pragma target 3.0
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -39,6 +40,7 @@ Shader "Custom/Outline2D"
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
                 float4 color : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -46,6 +48,7 @@ Shader "Custom/Outline2D"
                 float4 pos : SV_POSITION;
                 float2 uv  : TEXCOORD0;
                 float4 vcolor : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             v2f vert(app v)
@@ -75,6 +78,7 @@ Shader "Custom/Outline2D"
 
             float4 frag(v2f i) : SV_Target
             {
+                UNITY_SETUP_INSTANCE_ID(i);
                 float4 matColor = _Color * i.vcolor;
 
                 // sample texture once
