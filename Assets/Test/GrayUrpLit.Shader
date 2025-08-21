@@ -1,4 +1,4 @@
-Shader "Custom/URP_InvertedHull_Outline"
+Shader "Custom/GrayUrpLit"
 {
     Properties
     {
@@ -11,8 +11,8 @@ Shader "Custom/URP_InvertedHull_Outline"
         _Gloss ("Gloss", Range(8.0, 256)) = 20
         _Fresnel ("Fresnel", Range(0.0, 1.0)) = 0.5
 
-        _OutlineColor("Outline Color", Color) = (0, 0, 0, 1)
-        _OutlineWidth("Outline Width (object units)", Range(0.0, 50.0)) = 1.0
+        _Gray ("Gray", Range(0.0, 1.0)) = 1.0
+        _GrayMask ("GrayMask", Color) = (0.299,0.587,0.114,1.0)
     }
 
     SubShader
@@ -84,6 +84,9 @@ Shader "Custom/URP_InvertedHull_Outline"
             float _Gloss;
             float _Fresnel;
 
+            float _Gray;
+            float4 _GrayMask;
+
             v2f vert(a2v v)
             {
                 v2f o;
@@ -122,15 +125,21 @@ Shader "Custom/URP_InvertedHull_Outline"
                 bump.z = sqrt(1.0 - saturate(dot(bump.xy, bump.xy))); // Ensure the normal is normalized
                 bump = normalize(half3(dot(i.TtoW0.xyz, bump), dot(i.TtoW1.xyz, bump), dot(i.TtoW2.xyz, bump)));
 
-                // 纹理采样
-                float3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
-                
-                // 主光源阴影
-                i.shadowCoord = TransformWorldToShadowCoord(worldPos);
-                float shadow = MainLightRealtimeShadow(i.shadowCoord);
-                
                 // 菲涅尔效果
                 float fresnel = pow(1.0 - saturate(dot(bump, viewDir)), 5.0) * _Fresnel;
+
+                float4 tex = tex2D(_MainTex, i.uv.xy);
+
+                // 置灰
+                float gray = dot(tex.rgb, _GrayMask.rgb);
+                tex.rgb = lerp(tex.rgb, float3(gray, gray, gray), _Gray) * _Color;
+
+                // 纹理采样
+                float3 albedo = tex.rgb * _Color.rgb; // Sample the texture and apply color
+                
+                //住光源阴影
+                i.shadowCoord = TransformWorldToShadowCoord(worldPos);
+                float shadow = MainLightRealtimeShadow(i.shadowCoord);
 
                 // 光照
                 float3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
@@ -160,88 +169,6 @@ Shader "Custom/URP_InvertedHull_Outline"
                 return col;
             }
 
-            ENDHLSL
-        }
-
-        // -- -- Outline pass : draw backfaces expanded along normal -- --
-        Pass
-        {
-            Name "OUTLINE"
-            Cull Front
-            // ZWrite On
-            // ZTest LEqual
-            // Blend Off
-
-            HLSLPROGRAM
-            #pragma vertex VertOutline
-            #pragma fragment FragOutline
-            #pragma multi_compile_fog
-
-            // gpu instance
-            #pragma multi_compile_instancing
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
-
-            float _OutlineWidth;
-            float4 _OutlineColor;
-
-            struct appdataOutline
-            {
-                float4 vertex : POSITION;
-                float3 normal : NORMAL;
-                float4 vcolor : COLOR;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
-            };
-
-            struct v2f
-            {
-                float4 pos : SV_POSITION;
-                half fogFactor: TEXCOORD1;
-                float4 vcolor : COLOR;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
-            };
-
-            v2f VertOutline(appdataOutline v)
-            {
-                v2f o;
-                UNITY_SETUP_INSTANCE_ID(v);
-                UNITY_TRANSFER_INSTANCE_ID(v, o);
-                // 不随摄像机远近变化的描边宽度（屏幕空间像素）
-                // float3 posOffset = v.vertex.xyz + v.normal * _OutlineWidth;
-                // o.pos = TransformObjectToHClip(float4(posOffset, 1.0));
-
-                VertexPositionInputs vertexInput = GetVertexPositionInputs(v.vertex.xyz);
-                
-                // 恒定宽度
-                // Transform vertex to clip space
-                float4 clipPos = vertexInput.positionCS;
-                // 把法线变换到裁剪空间 (w=0)，再转换到 NDC 方向（除以 clip.w）
-                float2 clipNormalXY = mul(UNITY_MATRIX_MVP, float4(v.normal, 0.0)).xy;
-                float2 ndcDir = clipNormalXY / clipPos.w;
-
-                // 安全归一化
-                float len = max(length(ndcDir), 1e-6);
-                ndcDir /= len;
-
-                // 每轴的像素->NDC 缩放（一个像素在 NDC 中的大小）
-                float2 pixelToNDC = float2(2.0 / _ScreenParams.x, 2.0 / _ScreenParams.y);
-
-                // 在 NDC 空间按像素偏移，然后乘回 clip.w 应用到 clipPos.xy
-                float2 offsetNDC = ndcDir * (_OutlineWidth * pixelToNDC);
-                clipPos.xy += offsetNDC * clipPos.w;
-
-                o.pos = clipPos;
-                o.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
-                o.vcolor = v.vcolor;
-                return o;
-            }
-
-            float4 FragOutline(v2f i) : SV_Target
-            {
-                UNITY_SETUP_INSTANCE_ID(i);
-                float3 col = MixFog(_OutlineColor, i.fogFactor) * i.vcolor.rgb;
-                return float4(col, 1.0);
-            }
             ENDHLSL
         }
     }
