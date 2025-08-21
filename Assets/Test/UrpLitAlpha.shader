@@ -1,0 +1,242 @@
+Shader "Custom/UrpLitAlpha"
+{
+    Properties
+    {
+        _Color ("Color", Color) = (1, 1, 1, 1)
+        _MainTex ("Albedo (RGB)", 2D) = "white" {}
+        _Diffuse ("Diffuse", Color) = (1, 1, 1, 1)
+        _BumpMap ("Normal Map", 2D) = "bump" {}
+        _BumpScale ("Bump Scale", Float) = 1.0
+        _Specular ("Specular", Color) = (1, 1, 1, 1)
+        _Gloss ("Gloss", Range(8.0, 256)) = 20
+        _Fresnel ("Fresnel", Range(0.0, 1.0)) = 0.5
+        _ShadowAlphaCutoff ("ShadowAlphaCutoff", Range(-1.0, 1.0)) = 0.0
+    }
+
+    SubShader
+    {
+        Tags { "RenderPipeline" = "UniversalPipeline" "Queue" = "Transparent" }
+
+        Pass
+        {
+            Name "ShadowCaster"
+            Tags { "LightMode" = "ShadowCaster" }
+            ZWrite On
+            ColorMask 0
+
+            HLSLPROGRAM
+            #pragma vertex vert_shadow
+            #pragma fragment frag_shadow
+            #pragma shader_feature_local_fragment _ALPHATEST_ON
+            #pragma shader_feature_local_fragment _SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
+            float4 _Color;
+            float _ShadowAlphaCutoff; // add property if needed
+
+            struct a2v
+            {
+                float4 vertex : POSITION;
+                // float3 normal : NORMAL;
+                // float4 tangent : TANGENT;
+                float2 texcoord : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+
+            struct v2f_sh
+            {
+                float4 pos : SV_POSITION;
+                float2 uv  : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+
+            static const float _DitherMatrix[64] =
+            {
+                (0+0.5)/64.0, (32+0.5)/64.0, (8+0.5)/64.0, (40+0.5)/64.0, (2+0.5)/64.0, (34+0.5)/64.0, (10+0.5)/64.0, (42+0.5)/64.0,
+                (48+0.5)/64.0,(16+0.5)/64.0,(56+0.5)/64.0,(24+0.5)/64.0,(50+0.5)/64.0,(18+0.5)/64.0,(58+0.5)/64.0,(26+0.5)/64.0,
+                (12+0.5)/64.0,(44+0.5)/64.0,(4+0.5)/64.0, (36+0.5)/64.0,(14+0.5)/64.0,(46+0.5)/64.0,(6+0.5)/64.0, (38+0.5)/64.0,
+                (60+0.5)/64.0,(28+0.5)/64.0,(52+0.5)/64.0,(20+0.5)/64.0,(62+0.5)/64.0,(30+0.5)/64.0,(54+0.5)/64.0,(22+0.5)/64.0,
+                (3+0.5)/64.0, (35+0.5)/64.0,(11+0.5)/64.0,(43+0.5)/64.0,(1+0.5)/64.0, (33+0.5)/64.0,(9+0.5)/64.0, (41+0.5)/64.0,
+                (51+0.5)/64.0,(19+0.5)/64.0,(59+0.5)/64.0,(27+0.5)/64.0,(49+0.5)/64.0,(17+0.5)/64.0,(57+0.5)/64.0,(25+0.5)/64.0,
+                (15+0.5)/64.0,(47+0.5)/64.0,(7+0.5)/64.0, (39+0.5)/64.0,(13+0.5)/64.0,(45+0.5)/64.0,(5+0.5)/64.0, (37+0.5)/64.0,
+                (63+0.5)/64.0,(31+0.5)/64.0,(55+0.5)/64.0,(23+0.5)/64.0,(61+0.5)/64.0,(29+0.5)/64.0,(53+0.5)/64.0,(21+0.5)/64.0
+            };
+
+            v2f_sh vert_shadow(a2v v)
+            {
+                v2f_sh o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                VertexPositionInputs vertexInput = GetVertexPositionInputs(v.vertex.xyz);
+                o.pos = vertexInput.positionCS;
+                o.uv = v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw;
+                return o;
+            }
+
+            float4 frag_shadow(v2f_sh i) : SV_Target
+            {
+                float4 tex = tex2D(_MainTex, i.uv);
+                float alpha = tex.a * _Color.a;
+                // 使用更细的 8x8 dither 模拟阴影
+                int2 pixelPos = int2(i.pos.xy) % 8;
+                int index = pixelPos.y * 8 + pixelPos.x;
+                float ditherThreshold = _DitherMatrix[index] + _ShadowAlphaCutoff;
+                clip(alpha - ditherThreshold); // 小于阈值的像素不会写入 shadowmap
+                float3 col = tex.rgb * _Color.rgb * (1 - alpha);
+                return float4(col, 0);
+            }
+
+            ENDHLSL
+        }
+
+        // -- -- Base pass : simple textured (unlit) model -- --
+        Pass
+        {
+            Name "BaseColor"
+            Tags
+            {
+                "RenderType" = "Transparent"
+                "LightMode" = "UniversalForward"
+            }
+            Blend SrcAlpha OneMinusSrcAlpha
+
+            HLSLPROGRAM
+            // Physically based Standard lighting model, and enable shadows on all light types
+            #pragma vertex vert
+            #pragma fragment frag
+            // 阴影
+            #pragma multi_compile _ _SHADOWS_SOFT
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
+			#pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
+            // 雾
+            #pragma multi_compile_fog
+            // 额外光源
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+            // #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS _ADDITIONAL_LIGHT_CALCULATE_SHADOWS
+            // GPU Instance
+            #pragma multi_compile_instancing
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+            // #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+
+            struct a2v
+            {
+                float4 vertex : POSITION;
+                float3 normal : NORMAL;
+                float4 tangent : TANGENT;
+                float2 texcoord : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+
+            struct v2f
+            {
+                float4 pos : SV_POSITION;
+                float4 uv : TEXCOORD0;
+                float4 TtoW0 : TEXCOORD1; // Tangent to World space rotatio
+                float4 TtoW1 : TEXCOORD2; // Tangent to World space
+                float4 TtoW2 : TEXCOORD3; // Tangent to World space
+                half fogFactor : TEXCOORD4;
+                float4 shadowCoord : TEXCOORD5;	// shadow receive 
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+
+
+            float4 _Color;
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
+            sampler2D _BumpMap;
+            float4 _BumpMap_ST;
+            float _BumpScale;
+            float4 _Diffuse;
+            float4 _Specular;
+            float _Gloss;
+            float _Fresnel;
+
+            v2f vert(a2v v)
+            {
+                v2f o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
+                VertexPositionInputs vertexInput = GetVertexPositionInputs(v.vertex.xyz);
+
+                o.pos = vertexInput.positionCS; // UnityObjectToClipPos(v.vertex); // Transform vertex position to clip space
+                o.uv.xy = v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw; // Adjust UVs based on texture scale and offset
+                o.uv.zw = v.texcoord.xy * _BumpMap_ST.xy + _BumpMap_ST.zw; // Adjust UVs for normal map
+
+                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz; // mul(unity_ObjectToWorld, v.vertex).xyz;
+
+                float3 worldNormal = normalize(mul(unity_ObjectToWorld, v.normal));
+                float3 worldTangent = normalize(mul(unity_ObjectToWorld, v.tangent.xyz));
+                float3 worldBinormal = cross(worldNormal, worldTangent) * v.tangent.w;
+
+                o.TtoW0 = float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x);
+                o.TtoW1 = float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y);
+                o.TtoW2 = float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z);
+
+                o.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
+                return o;
+            }
+
+            float4 frag (v2f i) : SV_Target
+            {
+                UNITY_SETUP_INSTANCE_ID(i);
+                float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
+                float3 lightDir = normalize(GetMainLight().direction);
+                float3 viewDir = normalize(_WorldSpaceCameraPos - worldPos);
+
+                // 法线
+                float3 bump = UnpackNormal(tex2D(_BumpMap, i.uv.zw));
+                bump.xy *= _BumpScale; // Scale the normal map
+                bump.z = sqrt(1.0 - saturate(dot(bump.xy, bump.xy))); // Ensure the normal is normalized
+                bump = normalize(half3(dot(i.TtoW0.xyz, bump), dot(i.TtoW1.xyz, bump), dot(i.TtoW2.xyz, bump)));
+
+                // 菲涅尔效果
+                float fresnel = pow(1.0 - saturate(dot(bump, viewDir)), 5.0) * _Fresnel;
+
+                // 纹理采样
+                float4 tex = tex2D(_MainTex, i.uv.xy);
+                float3 albedo = tex.rgb * _Color.rgb; // Sample the texture and apply color
+                
+                // 主光源阴影
+                i.shadowCoord = TransformWorldToShadowCoord(worldPos);
+                float shadow = MainLightRealtimeShadow(i.shadowCoord);
+
+                // 光照
+                float3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
+                float3 diffuse = _MainLightColor.rgb * albedo * _Diffuse.rgb * max(0, dot(bump, lightDir)) * shadow + fresnel;
+                // 反射方向
+                float3 halfDir = normalize(lightDir + viewDir);
+                float3 specular = _MainLightColor.rgb * _Specular.rgb * pow(max(0, dot(bump, halfDir)), _Gloss) * shadow;
+
+#if defined(_ADDITIONAL_LIGHTS)
+                // 获取额外光源处理
+                int pixelLightCount = GetAdditionalLightsCount();
+                for(int index = 0; index < pixelLightCount; index++)
+                {
+                    Light light = GetAdditionalLight(index, worldPos);
+                    // 计算光照颜色和衰减
+                    float3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
+                    // 获取额外光源的阴影
+                    float addtionalShadow = AdditionalLightRealtimeShadow(index, worldPos);
+                    // 计算漫反射和镜面反射
+                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump) * addtionalShadow;
+			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss) * addtionalShadow;
+                }
+#endif
+                float4 col = float4(ambient + diffuse + specular, 1.0);
+                col.a = tex.a * _Color.a; // Apply alpha from texture and color
+                // 雾
+                col.rgb = MixFog(col.rgb, i.fogFactor);
+                return col;
+            }
+
+            ENDHLSL
+        }
+    }
+
+    FallBack "Diffuse"
+}
