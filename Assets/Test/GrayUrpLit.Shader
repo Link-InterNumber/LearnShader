@@ -4,9 +4,11 @@ Shader "Custom/GrayUrpLit"
     {
         _Color ("Color", Color) = (1, 1, 1, 1)
         _MainTex ("Albedo (RGB)", 2D) = "white" {}
-        _Diffuse ("Diffuse", Color) = (1, 1, 1, 1)
+        [Space]
         _BumpMap ("Normal Map", 2D) = "bump" {}
         _BumpScale ("Bump Scale", Float) = 1.0
+        [Space]
+        _Diffuse ("Diffuse", Color) = (1, 1, 1, 1)
         _Specular ("Specular", Color) = (1, 1, 1, 1)
         _Gloss ("Gloss", Range(8.0, 256)) = 20
         _Fresnel ("Fresnel", Range(0.0, 1.0)) = 0.5
@@ -34,15 +36,14 @@ Shader "Custom/GrayUrpLit"
             #pragma vertex vert
             #pragma fragment frag
             // 阴影
-            #pragma multi_compile _ _SHADOWS_SOFT
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
 			#pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
             // 雾
             #pragma multi_compile_fog
             // 额外光源
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
-            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
-            // #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS _ADDITIONAL_LIGHT_CALCULATE_SHADOWS
+            #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             // GPU Instance
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -68,17 +69,16 @@ Shader "Custom/GrayUrpLit"
                 float4 TtoW1 : TEXCOORD2; // Tangent to World space
                 float4 TtoW2 : TEXCOORD3; // Tangent to World space
                 half fogFactor : TEXCOORD4;
-                float4 shadowCoord : TEXCOORD5;	// shadow receive 
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
-            sampler2D _MainTex;
-            float4 _MainTex_ST;
-            sampler2D _BumpMap;
-            float4 _BumpMap_ST;
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
 
             CBUFFER_START(UnityPerMaterial)
             float4 _Color;
+            float4 _MainTex_ST;
+            float4 _BumpMap_ST;
             float _BumpScale;
             float4 _Diffuse;
             float4 _Specular;
@@ -122,7 +122,7 @@ Shader "Custom/GrayUrpLit"
                 float3 viewDir = normalize(_WorldSpaceCameraPos - worldPos);
 
                 // 法线
-                float3 bump = UnpackNormal(tex2D(_BumpMap, i.uv.zw));
+                float3 bump = UnpackNormal(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, i.uv.zw));//   (tex2D(_BumpMap, i.uv.zw));
                 bump.xy *= _BumpScale; // Scale the normal map
                 bump.z = sqrt(1.0 - saturate(dot(bump.xy, bump.xy))); // Ensure the normal is normalized
                 bump = normalize(half3(dot(i.TtoW0.xyz, bump), dot(i.TtoW1.xyz, bump), dot(i.TtoW2.xyz, bump)));
@@ -130,7 +130,7 @@ Shader "Custom/GrayUrpLit"
                 // 菲涅尔效果
                 float fresnel = pow(1.0 - saturate(dot(bump, viewDir)), 5.0) * _Fresnel;
 
-                float4 tex = tex2D(_MainTex, i.uv.xy);
+                float4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv.xy);
 
                 // 置灰
                 float gray = dot(tex.rgb, _GrayMask.rgb);
@@ -140,8 +140,8 @@ Shader "Custom/GrayUrpLit"
                 float3 albedo = tex.rgb * _Color.rgb; // Sample the texture and apply color
                 
                 // 主光源阴影
-                i.shadowCoord = TransformWorldToShadowCoord(worldPos);
-                float shadow = MainLightRealtimeShadow(i.shadowCoord);
+                float4 shadowCoord = TransformWorldToShadowCoord(worldPos);
+                float shadow = MainLightRealtimeShadow(shadowCoord);
 
                 // 光照
                 float3 ambient = half3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w).xyz * albedo;
@@ -155,14 +155,14 @@ Shader "Custom/GrayUrpLit"
                 int pixelLightCount = GetAdditionalLightsCount();
                 for(int index = 0; index < pixelLightCount; index++)
                 {
-                    Light light = GetAdditionalLight(index, worldPos);
+                    Light light = GetAdditionalLight(index, worldPos, half4(1,1,1,1));
                     // 计算光照颜色和衰减
                     float3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
                     // 获取额外光源的阴影
-                    float addtionalShadow = AdditionalLightRealtimeShadow(index, worldPos);
+                    // float addtionalShadow = AdditionalLightRealtimeShadow(i.shadowCoord, index);
                     // 计算漫反射和镜面反射
-                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump) * addtionalShadow;
-			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss) * addtionalShadow;
+                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump); //* addtionalShadow;
+			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss); //* addtionalShadow;
                 }
 #endif
                 float4 col = float4(ambient + diffuse + specular, 1.0);
