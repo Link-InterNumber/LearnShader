@@ -31,11 +31,18 @@ Shader "Custom/UrpLitAlpha"
             #pragma shader_feature_local_fragment _SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            sampler2D _MainTex;
-            float4 _MainTex_ST;
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            // TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
 
             CBUFFER_START(UnityPerMaterial)
             float4 _Color;
+            float4 _MainTex_ST;
+            float4 _BumpMap_ST;
+            float _BumpScale;
+            float4 _Diffuse;
+            float4 _Specular;
+            float _Gloss;
+            float _Fresnel;
             float _ShadowAlphaCutoff; // add property if needed
             CBUFFER_END
 
@@ -79,7 +86,7 @@ Shader "Custom/UrpLitAlpha"
 
             float4 frag_shadow(v2f_sh i) : SV_Target
             {
-                float4 tex = tex2D(_MainTex, i.uv);
+                float4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
                 float alpha = tex.a * _Color.a;
                 // 使用更细的 8x8 dither 模拟阴影
                 int2 pixelPos = int2(i.pos.xy) % 8;
@@ -109,14 +116,14 @@ Shader "Custom/UrpLitAlpha"
             #pragma vertex vert
             #pragma fragment frag
             // 阴影
+            #pragma multi_compile _ _SHADOWS_SOFT
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
 			#pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
             // 雾
             #pragma multi_compile_fog
             // 额外光源
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
-            #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
-            #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
+            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
             // #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS _ADDITIONAL_LIGHT_CALCULATE_SHADOWS
             // GPU Instance
             #pragma multi_compile_instancing
@@ -158,6 +165,7 @@ Shader "Custom/UrpLitAlpha"
             float4 _Specular;
             float _Gloss;
             float _Fresnel;
+            float _ShadowAlphaCutoff; // add property if needed
             CBUFFER_END
 
             v2f vert(a2v v)
@@ -171,7 +179,7 @@ Shader "Custom/UrpLitAlpha"
                 o.uv.xy = v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw; // Adjust UVs based on texture scale and offset
                 o.uv.zw = v.texcoord.xy * _BumpMap_ST.xy + _BumpMap_ST.zw; // Adjust UVs for normal map
 
-                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz; // mul(unity_ObjectToWorld, v.vertex).xyz;
+                float3 worldPos = vertexInput.positionWS.xyz; // mul(unity_ObjectToWorld, v.vertex).xyz;
 
                 float3 worldNormal = normalize(mul(unity_ObjectToWorld, v.normal));
                 float3 worldTangent = normalize(mul(unity_ObjectToWorld, v.tangent.xyz));
@@ -221,14 +229,14 @@ Shader "Custom/UrpLitAlpha"
                 int pixelLightCount = GetAdditionalLightsCount();
                 for(int index = 0; index < pixelLightCount; index++)
                 {
-                    Light light = GetAdditionalLight(index, worldPos, half4(1,1,1,1));
+                    Light light = GetAdditionalLight(index, worldPos);
                     // 计算光照颜色和衰减
                     float3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
                     // 获取额外光源的阴影
-                    // float addtionalShadow = AdditionalLightRealtimeShadow(i.shadowCoord, index);
+                    float addtionalShadow = AdditionalLightRealtimeShadow(index, worldPos);
                     // 计算漫反射和镜面反射
-                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump); //* addtionalShadow;
-			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss); //* addtionalShadow;
+                    diffuse += LightingLambert(attenuatedLightColor, light.direction, bump) * addtionalShadow;
+			        specular += LightingSpecular(attenuatedLightColor, light.direction, bump, viewDir, _Specular, _Gloss) * addtionalShadow;
                 }
 #endif
                 float4 col = float4(ambient + diffuse + specular, 1.0);

@@ -96,7 +96,7 @@ Shader "Custom/BaseUrpLit"
                 o.uv.xy = v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw; // Adjust UVs based on texture scale and offset
                 o.uv.zw = v.texcoord.xy * _BumpMap_ST.xy + _BumpMap_ST.zw; // Adjust UVs for normal map
 
-                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz; // mul(unity_ObjectToWorld, v.vertex).xyz;
+                float3 worldPos = vertexInput.positionWS.xyz; // mul(unity_ObjectToWorld, v.vertex).xyz;
 
                 float3 worldNormal = normalize(mul(unity_ObjectToWorld, v.normal));
                 float3 worldTangent = normalize(mul(unity_ObjectToWorld, v.tangent.xyz));
@@ -127,7 +127,7 @@ Shader "Custom/BaseUrpLit"
                 float fresnel = pow(1.0 - saturate(dot(bump, viewDir)), 5.0) * _Fresnel;
 
                 // 纹理采样
-                float3 albedo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv.xy) * _Color.rgb; // tex2D(_MainTex, i.uv.xy).rgb * _Color.rgb; // Sample the texture and apply color
+                float3 albedo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv.xy) * _Color.rgb; // Sample the texture and apply color
                 
                 // 主光源阴影
                 float4 shadowCoord = TransformWorldToShadowCoord(worldPos);
