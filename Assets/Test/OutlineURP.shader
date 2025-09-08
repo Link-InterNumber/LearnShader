@@ -1,10 +1,12 @@
-Shader "Custom/URP_Outline"
+Shader "Custom/URP_InvertedHull_Outline"
 {
     Properties
     {
         _Color ("Color", Color) = (1, 1, 1, 1)
         _MainTex ("Albedo (RGB)", 2D) = "white" {}
         _Diffuse ("Diffuse", Color) = (1, 1, 1, 1)
+        [Toggle(_USE_SMOOTH_NORMAL)] _UseSmoothNormal("Use SmoothNormal Map", Float) = 0
+        _SmoothNormal ("SmoothNormal", 2D) = "bump" {}
         _BumpMap ("Normal Map", 2D) = "bump" {}
         _BumpScale ("Bump Scale", Float) = 1.0
         _Specular ("Specular", Color) = (1, 1, 1, 1)
@@ -170,20 +172,26 @@ Shader "Custom/URP_Outline"
         Pass
         {
             Name "OUTLINE"
-            Cull Front
-            // ZWrite On
+            // Tags { "LightMode" = "Always" }
+            Cull Front            // 反向剔除，显示外挂面
+            // ZWrite Off            // 不写深度
             // ZTest LEqual
-            // Blend Off
+            Blend Off
 
             HLSLPROGRAM
             #pragma vertex VertOutline
             #pragma fragment FragOutline
             #pragma multi_compile_fog
+            #pragma shader_feature_local _USE_SMOOTH_NORMAL
 
             // gpu instance
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+
+            TEXTURE2D(_SmoothNormal); 
+            SAMPLER(sampler_SmoothNormal);
+            // float4 _SmoothNormal_ST;
 
             CBUFFER_START(UnityPerMaterial)
             float4 _Color;
@@ -203,6 +211,7 @@ Shader "Custom/URP_Outline"
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
                 float4 vcolor : COLOR;
+                float2 texcoord : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -223,13 +232,22 @@ Shader "Custom/URP_Outline"
                 // float3 posOffset = v.vertex.xyz + v.normal * _OutlineWidth;
                 // o.pos = TransformObjectToHClip(float4(posOffset, 1.0));
 
+                float3 smoothNormal = v.normal;
+                #ifdef _USE_SMOOTH_NORMAL
+                {
+                    // 使用平滑法线贴图
+                    float2 uv = v.texcoord.xy; // * _SmoothNormal.xy + _SmoothNormal.zw;
+                    smoothNormal = UnpackNormal(SAMPLE_TEXTURE2D_LOD(_SmoothNormal, sampler_SmoothNormal, uv, 0));
+                }
+                #endif
+
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(v.vertex.xyz);
                 
                 // 恒定宽度
                 // Transform vertex to clip space
                 float4 clipPos = vertexInput.positionCS;
                 // 把法线变换到裁剪空间 (w=0)，再转换到 NDC 方向（除以 clip.w）
-                float2 clipNormalXY = mul(UNITY_MATRIX_MVP, float4(v.normal, 0.0)).xy;
+                float2 clipNormalXY = mul(UNITY_MATRIX_MVP, float4(smoothNormal, 0.0)).xy;
                 float2 ndcDir = clipNormalXY / clipPos.w;
 
                 // 安全归一化
