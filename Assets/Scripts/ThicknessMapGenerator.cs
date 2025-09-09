@@ -51,7 +51,7 @@ public class ThicknessMapGenerator : EditorWindow
             return;
             
         // 创建厚度图纹理
-        Texture2D thicknessMap = new Texture2D(textureSize, textureSize, TextureFormat.R16, false);
+        Texture2D thicknessMap = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
         
         // 获取网格数据
         Vector3[] vertices = targetMesh.vertices;
@@ -68,6 +68,12 @@ public class ThicknessMapGenerator : EditorWindow
         // 创建加速结构
         Bounds bounds = targetMesh.bounds;
         float maxDimension = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
+
+        float diag = bounds.size.magnitude;
+        // 1) 自适应追踪上限：<=0 表示自动
+        float traceMax = (maxRayDistance <= 0f ? diag * 4f : maxRayDistance);
+        // 尺度相关的偏移与最小距离
+        float eps = Mathf.Max(1e-5f, maxDimension * 1e-4f);
         
         // 创建射线，以顶点位置和法线方向为基础
         float maxThickness = 0.0f;
@@ -81,15 +87,23 @@ public class ThicknessMapGenerator : EditorWindow
             Vector3 normal = normals[i];
             
             // 计算厚度 (向内部发射射线)
-            float thickness = CalculateThicknessAtPoint(origin, -normal, vertices, triangles);
+            float thickness = CalculateThicknessAtPoint(i, origin, -normal, vertices, triangles, traceMax, eps);
             vertexThickness[i] = thickness;
             
             // 记录最大厚度值用于归一化
             if (thickness > maxThickness)
                 maxThickness = thickness;
                 
-            if (i % 100 == 0)
+            if (i % 200 == 0)
                 EditorUtility.DisplayProgressBar("Computing Thickness", "Calculating thickness values...", (float)i / vertices.Length);
+        }
+
+        // 3) 防御：避免除零；若全部为0，则直接退出
+        if (maxThickness <= 1e-8f)
+        {
+            EditorUtility.ClearProgressBar();
+            Debug.LogWarning("All thickness values are zero. Check mesh closedness or ray settings.");
+            return;
         }
         
         // 创建用于烘焙的网格
@@ -147,7 +161,9 @@ public class ThicknessMapGenerator : EditorWindow
         // 保存纹理到文件
         string meshPath = AssetDatabase.GetAssetPath(targetMesh);
         string directory = Path.GetDirectoryName(meshPath);
-        string fileName = Path.GetFileNameWithoutExtension(meshPath) + "_Thickness.png";
+        // 获取mesh文件名
+        string meshName = targetMesh.name;
+        string fileName = Path.GetFileNameWithoutExtension(meshPath) + $"_{meshName}" + "_Thickness.png";
         string savePath = Path.Combine(directory, fileName);
         
         byte[] pngData = thicknessMap.EncodeToPNG();
@@ -161,37 +177,46 @@ public class ThicknessMapGenerator : EditorWindow
         Debug.Log($"厚度图已保存到: {savePath}");
     }
     
-    private float CalculateThicknessAtPoint(Vector3 origin, Vector3 direction, Vector3[] vertices, int[] triangles)
+    private float CalculateThicknessAtPoint(
+        int sourceVertex,
+        Vector3 origin,
+        Vector3 direction,
+        Vector3[] vertices,
+        int[] triangles,
+        float traceMax,
+        float eps)
     {
-        float minThickness = maxRayDistance;
+        // 射线起点向内偏移一个与尺度相关的量
+        Vector3 rayOrigin = origin + direction.normalized * eps;
+
+        float best = float.PositiveInfinity;
         bool hit = false;
-        
-        // 为了简单起见，我们将对每个三角形进行射线检测
-        // 在实际项目中，你可能想要使用加速结构如BVH或八叉树
+
         for (int i = 0; i < triangles.Length; i += 3)
         {
-            Vector3 v1 = vertices[triangles[i]];
-            Vector3 v2 = vertices[triangles[i + 1]];
-            Vector3 v3 = vertices[triangles[i + 2]];
-            
-            // 避免与起源三角形相交
-            if (Vector3.Distance(origin, v1) < 0.001f || 
-                Vector3.Distance(origin, v2) < 0.001f || 
-                Vector3.Distance(origin, v3) < 0.001f)
+            int i0 = triangles[i];
+            int i1 = triangles[i + 1];
+            int i2 = triangles[i + 2];
+
+            // 4) 跳过包含当前顶点的三角形，避免“立刻命中自身”
+            if (i0 == sourceVertex || i1 == sourceVertex || i2 == sourceVertex)
                 continue;
-                
-            // 射线三角形相交检测
-            if (RayIntersectsTriangle(origin, direction, v1, v2, v3, out float distance))
+
+            if (RayIntersectsTriangle(rayOrigin, direction, vertices[i0], vertices[i1], vertices[i2], out float t))
             {
-                if (distance > 0.001f && distance < minThickness)
+                if (t > eps && t < best)
                 {
-                    minThickness = distance;
+                    best = t;
                     hit = true;
                 }
             }
         }
-        
-        return hit ? minThickness : 0;
+
+        if (!hit) return 0f;
+        // 5) 不做硬 clamp；可做早停上限过滤（超出追踪距离认为无效，避免把“上限”当最大值）
+        if (best > traceMax) return 0f;
+
+        return best;
     }
     
     private bool RayIntersectsTriangle(Vector3 origin, Vector3 direction, 
@@ -239,6 +264,11 @@ public class ThicknessMapGenerator : EditorWindow
                                   Vector2 uv1, Vector2 uv2, Vector2 uv3,
                                   float t1, float t2, float t3)
     {
+        // 确保UV在[0,1]范围内
+        uv1 = new Vector2(Mathf.Clamp01(uv1.x), Mathf.Clamp01(uv1.y));
+        uv2 = new Vector2(Mathf.Clamp01(uv2.x), Mathf.Clamp01(uv2.y));
+        uv3 = new Vector2(Mathf.Clamp01(uv3.x), Mathf.Clamp01(uv3.y));
+
         // 将UV坐标转换为像素坐标
         Vector2 p1 = new Vector2(uv1.x * width, uv1.y * height);
         Vector2 p2 = new Vector2(uv2.x * width, uv2.y * height);
@@ -270,7 +300,6 @@ public class ThicknessMapGenerator : EditorWindow
                 {
                     // 插值厚度值
                     float thickness = barycentric.x * t1 + barycentric.y * t2 + barycentric.z * t3;
-                    
                     // 写入像素
                     int pixelIndex = y * width + x;
                     pixels[pixelIndex] = new Color(thickness, thickness, thickness, 1);

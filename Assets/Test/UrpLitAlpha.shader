@@ -17,6 +17,27 @@ Shader "Custom/UrpLitAlpha"
     {
         Tags { "RenderPipeline" = "UniversalPipeline" "Queue" = "Transparent" }
 
+        // Pass
+        // {
+        //     Name "DepthNormals"
+        //     Tags { "LightMode" = "DepthNormals" }
+
+        //     ZWrite Off          // 关闭深度写入
+        //     ZTest LEqual
+        //     Cull Back
+        //     Blend SrcAlpha OneMinusSrcAlpha  // 添加透明混合
+
+        //     HLSLPROGRAM
+        //     #pragma vertex DepthNormalsVertex
+        //     #pragma fragment DepthNormalsFragment
+        //     #pragma multi_compile_instancing
+        //     #pragma multi_compile _ DOTS_INSTANCING_ON
+
+        //     #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+        //     #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthNormalsPass.hlsl"
+        //     ENDHLSL
+        // }
+
         Pass
         {
             Name "ShadowCaster"
