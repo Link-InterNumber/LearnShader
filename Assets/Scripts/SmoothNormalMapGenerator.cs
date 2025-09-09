@@ -113,7 +113,8 @@ public class SmoothNormalMapGenerator : EditorWindow
         // 保存纹理到文件
         string meshPath = AssetDatabase.GetAssetPath(targetMesh);
         string directory = Path.GetDirectoryName(meshPath);
-        string fileName = Path.GetFileNameWithoutExtension(meshPath) + "_SmoothNormals.png";
+        string meshName = targetMesh.name;
+        string fileName = Path.GetFileNameWithoutExtension(meshPath) + $"_{meshName}" + "_SmoothNormals.png";
         string savePath = Path.Combine(directory, fileName);
 
         byte[] pngData = normalMap.EncodeToPNG();
